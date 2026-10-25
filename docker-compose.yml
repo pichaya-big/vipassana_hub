@@ -1,0 +1,42 @@
+services:
+  proxy:
+    image: nginx:1.27-alpine
+    container_name: vh-proxy
+    ports:
+      - "80:80"
+    volumes:
+      - ./proxy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - client
+      - server
+    restart: unless-stopped
+
+  client:
+    build: ./client
+    container_name: vh-client
+    environment:
+      # Server-side Next.js fetches reach the API over the Docker network
+      API_INTERNAL_URL: http://server:4000
+    expose:
+      - "3000"
+    depends_on:
+      - server
+    restart: unless-stopped
+
+  server:
+    build: ./server
+    container_name: vh-server
+    env_file:
+      - path: ./server/.env
+        required: false
+    environment:
+      # Lesson videos live in a named volume so they survive rebuilds and restarts
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - uploads:/app/uploads
+    expose:
+      - "4000"
+    restart: unless-stopped
+
+volumes:
+  uploads:
