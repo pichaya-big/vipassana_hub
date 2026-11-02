@@ -2,11 +2,15 @@ services:
   proxy:
     image: nginx:1.27-alpine
     container_name: vh-proxy
-    ports:
-      # Host port is configurable so it does not clash with another reverse proxy (for example Nginx Proxy Manager) on the VPS
-      - "${PROXY_PORT:-8080}:80"
+    # No host port. Nginx Proxy Manager reaches this proxy through the shared nginx-proxy-net network,
+    # the same way the Romantic_Digital_Confession_App is connected.
+    expose:
+      - "80"
     volumes:
       - ./proxy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - default
+      - nginx-proxy-net
     depends_on:
       - client
       - server
@@ -41,3 +45,8 @@ services:
 
 volumes:
   uploads:
+
+networks:
+  # Created once on the VPS. Also used by Nginx Proxy Manager and the other apps on that host.
+  nginx-proxy-net:
+    external: true

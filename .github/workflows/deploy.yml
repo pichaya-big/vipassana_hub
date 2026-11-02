@@ -1,21 +1,19 @@
-# Deploy a version to the VPS when a tag such as v1.0.0 is pushed.
-# The VPS checks out that tag, builds the images on the VPS itself, and restarts the stack.
-# Domain and HTTPS are handled outside this repo (for example by Nginx Proxy Manager).
+# Deploy to VPS when a tag such as v1.0.0 is pushed.
+# Same secret names as Romantic_Digital_Confession_App, so one set of values works for both.
 #
-# Secrets needed in GitHub (Settings > Secrets and variables > Actions):
-#   VPS_HOST      server address
-#   VPS_USER      SSH user that can run docker (member of the docker group)
-#   VPS_SSH_KEY   private key for that user (use a key made only for deployment)
-#   VPS_PORT      optional, defaults to 22
-#   VPS_APP_DIR   folder on the VPS where this repo is cloned, e.g. /opt/vipassana-hub
-#   PROXY_PORT    optional, host port for the proxy, defaults to 8080 in docker-compose.yml
+# Secrets (Settings > Secrets and variables > Actions):
+#   VPS_HOST        server address
+#   VPS_USERNAME    SSH user that can run docker (member of the docker group)
+#   SSH_PRIVATE_KEY private key for that user (a key made only for deployment)
+#   VPS_PORT        SSH port, usually 22
+#   VPS_APP_DIR     folder on the VPS where this repo is cloned, e.g. /opt/vipassana-hub
 
-name: Deploy tag to VPS
+name: Deploy to VPS
 
 on:
   push:
     tags:
-      - "v*"
+      - "v*" # deploy only when a tag starting with v is pushed, e.g. v1.0.0
 
 # One deployment at a time. A second tag waits instead of running at the same moment.
 concurrency:
@@ -25,42 +23,43 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Build and start ${{ github.ref_name }} on the VPS
-        uses: appleboy/ssh-action@v1.2.0
+      - name: Deploy to VPS via SSH
+        uses: appleboy/ssh-action@v1.0.3
         env:
+          TAG_NAME: ${{ github.ref_name }}
           APP_DIR: ${{ secrets.VPS_APP_DIR }}
-          PROXY_PORT: ${{ secrets.PROXY_PORT }}
         with:
           host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.VPS_PORT || 22 }}
-          envs: APP_DIR,PROXY_PORT,GITHUB_REF_NAME
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          envs: TAG_NAME,APP_DIR
           script_stop: true
           script: |
             set -euo pipefail
             cd "$APP_DIR"
 
-            # Make the folder match the tag exactly
+            # Make the folder match the tag exactly. .env and uploads are kept.
             git fetch --tags --force origin
-            git checkout --force "$GITHUB_REF_NAME"
+            git checkout --force "$TAG_NAME"
             git clean -fd -e .env -e uploads
 
-            # Build on the VPS, then restart. Containers that did not change are left alone.
+            # Build on the VPS and restart. Containers whose image did not change are left running.
             docker compose build
             docker compose up -d --remove-orphans
 
             # Wait until the API answers through the proxy, or fail the job
-            PORT="${PROXY_PORT:-8080}"
             for i in $(seq 1 30); do
-              if curl -fsS "http://localhost:${PORT}/api/health" > /dev/null; then
-                echo "Deployed $GITHUB_REF_NAME and health check passed"
+              if docker compose exec -T proxy wget -qO- http://127.0.0.1/api/health > /dev/null 2>&1; then
+                echo "Deployed $TAG_NAME and health check passed"
                 docker compose ps
                 exit 0
               fi
               sleep 3
             done
-            echo "Health check failed for $GITHUB_REF_NAME"
+
+            echo "Health check failed for $TAG_NAME"
             docker compose logs --tail=100
             exit 1
