@@ -1,0 +1,7 @@
+# Local testing only. Publishes the proxy to http://localhost:8080 on your own machine.
+# Usage:  docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+# Do NOT use this file on the VPS. The base file keeps the proxy reachable only through nginx-proxy-net.
+services:
+  proxy:
+    ports:
+      - "127.0.0.1:8080:80"
