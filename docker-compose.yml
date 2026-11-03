@@ -42,6 +42,9 @@ services:
     expose:
       - "4000"
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
 
 volumes:
   uploads:
